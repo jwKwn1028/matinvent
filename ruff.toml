@@ -1,0 +1,7 @@
+# Ruff 0.16 expanded its implicit default from 59 to 413 rules. Keep the
+# project's existing lint contract explicit so dependency updates do not
+# silently turn stylistic migrations into CI failures.
+target-version = "py310"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
