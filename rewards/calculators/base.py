@@ -1,7 +1,7 @@
 import os
 
 
-class Calculator():
+class Calculator:
     def __init__(
         self,
         root_dir: str,
@@ -13,4 +13,4 @@ class Calculator():
             os.makedirs(self.root_dir)
 
     def calc(self):
-        NotImplementedError
+        raise NotImplementedError

@@ -1,0 +1,85 @@
+# Higher-selectivity Li electrolyte reward. This combines the fast ionic
+# descriptor pass with the pretrained MatInvent band-gap, formation-energy, and
+# synthesizability estimators. It is slower than reward=ionic_conductor.
+_target_: rewards.reward.Reward
+
+root_dir: rewards/ionic_conductor_balanced
+
+calculator:
+  _target_: rewards.calculators.IonicConductivity
+  root_dir: rewards/ionic_conductor_balanced/descriptors
+  mobile_species:
+    - Li
+  temperature_k: 298.15
+  hop_cutoff: 4.0
+  strict: false
+
+prop_cfg:
+  - name: transport_score
+    target: ascending
+    minv: 0.15
+    maxv: 0.75
+    weight: 0.40
+  - name: mobile_sublattice_dimensionality
+    target: ascending
+    minv: 0.0
+    maxv: 3.0
+    weight: 0.10
+  - name: short_contact_score
+    target: ascending
+    minv: 0.50
+    maxv: 1.0
+    weight: 0.05
+  - name: mobile_fraction
+    target: 0.25
+    minv: 0.0
+    maxv: 0.20
+    weight: 0.05
+  - name: band_gap
+    calculator:
+      _target_: rewards.calculators.ALIGNN
+      root_dir: rewards/ionic_conductor_balanced/band_gap
+      task: band_gap
+      device: ${device}
+      silent: true
+    target: ascending
+    minv: 1.0
+    maxv: 4.0
+    weight: 0.15
+  - name: formation_energy
+    calculator:
+      _target_: rewards.calculators.ALIGNN
+      root_dir: rewards/ionic_conductor_balanced/formation_energy
+      task: formation_energy
+      device: ${device}
+      silent: true
+    target: descending
+    minv: -3.5
+    maxv: -0.5
+    weight: 0.15
+  - name: synthesizability
+    calculator:
+      _target_: rewards.calculators.SynScore
+      root_dir: rewards/ionic_conductor_balanced/synthesizability
+      task: syn_score
+    target: ascending
+    minv: 0.5
+    maxv: 1.0
+    weight: 0.10
+
+constraint_cfg:
+  - name: mobile_fraction
+    min: 0.03
+    penalty: 0.0
+  - name: short_contact_score
+    min: 0.25
+    penalty: 0.0
+  - name: band_gap
+    min: 1.0
+    penalty: 0.0
+  - name: formation_energy
+    max: -0.25
+    penalty: 0.0
+
+reduce: weight
+reward_threshold: 0.72

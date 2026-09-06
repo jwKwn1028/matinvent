@@ -1,5 +1,5 @@
 # global setting
-expname: test
+expname: li_ionic_conductor
 results_dir: exp_res
 device: cuda
 
@@ -28,9 +28,12 @@ hydra:
   run:
     dir: ${results_dir}/${expname}
     # dir: ${results_dir}/${expname}-${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: true
 
 defaults:
   - pipeline: mat_invent
-  - model: mattergen
-  - reward: hhi
-  - logger: wandb
+  - model: mattergen_ionic
+  - reward: ionic_conductor
+  - logger: csv
+  - _self_

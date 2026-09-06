@@ -54,7 +54,7 @@ class MatInvent(ReinL):
         self.div_filter = div_filter
         self.df_args = df_args
 
-        if 'filter' not in self.sample_cfg:
+        if "filter" not in self.sample_cfg:
             self.opt_eval = OptEval()
 
         self.load_model()
@@ -73,7 +73,8 @@ class MatInvent(ReinL):
 
     def sample_step(self):
         sample_data, sample_struc = self.sampler.generate(
-            model=self.agent, **self.sample_cfg,
+            model=self.agent,
+            **self.sample_cfg,
         )
         # Filter invalid samples
         sample_data, sample_struc = invalid_filter(sample_data, sample_struc)
@@ -82,32 +83,34 @@ class MatInvent(ReinL):
         valid_xyz_path = save_structures(
             structures=sample_struc,
             save_dir=self.sample_dir,
-            filename=f'step_{self.step:0>4d}_valid.extxyz',
+            filename=f"step_{self.step:0>4d}_valid.extxyz",
         )
 
         # MLIP relaxation
-        if self.sample_cfg.get('mlip_opt'):
+        if self.sample_cfg.get("mlip_opt"):
             mlip_opt = self.sample_cfg.mlip_opt
             sample_struc, energies = mlip_opt(sample_struc, valid_xyz_path)
         else:
             energies = None
 
         # Filter bad samples by selected metrics
-        if self.sample_cfg.get('filter'):
+        if self.sample_cfg.get("filter"):
             filter = self.sample_cfg.filter
             sample_data, sample_struc, metrics = filter(
-                sample_data, sample_struc, energies,
+                sample_data,
+                sample_struc,
+                energies,
             )
-            logging.info(f'Number of filtered samples: {len(sample_struc)}')
+            logging.info(f"Number of filtered samples: {len(sample_struc)}")
         else:
             # metrics, _ = self.opt_eval(sample_struc, energies)
             metrics = {}
 
-        log_str = [f'{k}: {v:.6f}' for k, v in metrics.items()]
-        logging.info(', '.join(log_str))
+        log_str = [f"{k}: {v:.6f}" for k, v in metrics.items()]
+        logging.info(", ".join(log_str))
 
         # max sample size to score/reward
-        if self.sample_cfg.get('max_num'):
+        if self.sample_cfg.get("max_num"):
             max_num = self.sample_cfg.max_num
             if len(sample_struc) > max_num:
                 sample_data = sample_data[:max_num]
@@ -117,7 +120,7 @@ class MatInvent(ReinL):
         eval_xyz_path = save_structures(
             structures=sample_struc,
             save_dir=self.sample_dir,
-            filename=f'step_{self.step:0>4d}_eval.extxyz',
+            filename=f"step_{self.step:0>4d}_eval.extxyz",
         )
 
         return sample_data, sample_struc, eval_xyz_path, metrics
@@ -141,14 +144,13 @@ class MatInvent(ReinL):
             # logging.info(f"Epoch {epoch} starts:")
             self.agent.train()
 
-            loss_all, loss_diff_all, loss_kl_all = 0., 0., 0.
+            loss_all, loss_diff_all, loss_kl_all = 0.0, 0.0, 0.0
             for batch in loader:
                 batch = batch.to(self.device)
                 optimizer.zero_grad()
-                loss, loss_diff, loss_kl = 0., 0., 0.
+                loss, loss_diff, loss_kl = 0.0, 0.0, 0.0
 
                 for t in range(cfg.timesteps):
-
                     noised_input = self.agent.add_noise(batch, t)
                     sample_loss, agent_pred = self.agent.calc_sample_loss(noised_input)
                     _, prior_pred = self.prior.calc_sample_loss(noised_input)
@@ -181,47 +183,57 @@ class MatInvent(ReinL):
                 loss_kl_all += loss_kl
 
             loss_dict = {
-                'loss': loss_all / len(data_list),
-                'loss_diff': loss_diff_all / len(data_list),
-                'loss_kl': loss_kl_all / len(data_list),
+                "loss": loss_all / len(data_list),
+                "loss_diff": loss_diff_all / len(data_list),
+                "loss_kl": loss_kl_all / len(data_list),
             }
-            log_str = [f'{k}: {v:.4f}' for k, v in loss_dict.items()]
-            logging.info(f'Epoch {epoch}: ' + ', '.join(log_str))
+            log_str = [f"{k}: {v:.4f}" for k, v in loss_dict.items()]
+            logging.info(f"Epoch {epoch}: " + ", ".join(log_str))
 
     def rl_step(self):
-        logging.info(f'*****   LOOP {self.step} START   *****')
+        logging.info(f"*****   LOOP {self.step} START   *****")
         start_time = time.time()
 
-        logging.info('SAMPLE:')
+        logging.info("SAMPLE:")
         sample_list, sample_struc, xyz_path, sample_metrics = self.sample_step()
 
         # sample scoring, remove failed samples, ranking and get top k samples
-        logging.info('SCORE:')
+        logging.info("SCORE:")
         sample_list, sample_struc, rewards, prop_dict = self.reward_step(
-            sample_list, sample_struc, xyz_path, f'step_{self.step:0>4d}',
+            sample_list,
+            sample_struc,
+            xyz_path,
+            f"step_{self.step:0>4d}",
         )
 
-        log_dict = {f'{k} mean': v.mean() for k, v in prop_dict.items()}
-        log_dict.update({f'{k} std': v.std() for k, v in prop_dict.items()})
-        log_dict.update({'reward mean': rewards.mean(), 'reward std': rewards.std()})
+        if len(rewards) == 0:
+            logging.warning(
+                "Skipping replay and fine-tuning because this loop produced "
+                "no successfully scored structures."
+            )
+            return
+
+        log_dict = {f"{k} mean": v.mean() for k, v in prop_dict.items()}
+        log_dict.update({f"{k} std": v.std() for k, v in prop_dict.items()})
+        log_dict.update({"reward mean": rewards.mean(), "reward std": rewards.std()})
         log_dict.update(sample_metrics)
 
         # long-term memory
         self.ltm.extend(sample_struc, rewards, self.step)
         metrics = self.ltm.calc_metrics(self.reward.threshold)
-        self.ltm.save(os.path.join(self.sample_dir, 'long_term_memory.csv'))
+        self.ltm.save(os.path.join(self.sample_dir, "long_term_memory.csv"))
         logging.info(
-            f'{len(self.ltm)} crystals generated so far, ' +
-            f'{len(self.ltm.unique_comps)} unique components.' +
-            f'  Burden: {metrics[0]}, Div. Ratio: {metrics[1]}.'
+            f"{len(self.ltm)} crystals generated so far, "
+            + f"{len(self.ltm.unique_comps)} unique components."
+            + f"  Burden: {metrics[0]}, Div. Ratio: {metrics[1]}."
         )
         log_dict.update(
             {
-                'crystal_num': len(self.ltm),
-                'unique_comps': len(self.ltm.unique_comps),
-                'burden': metrics[0],
-                'div_ratio': metrics[1],
-                'cost': self.cost,
+                "crystal_num": len(self.ltm),
+                "unique_comps": len(self.ltm.unique_comps),
+                "burden": metrics[0],
+                "div_ratio": metrics[1],
+                "cost": self.cost,
             }
         )
         if self.logger is not None:
@@ -232,13 +244,13 @@ class MatInvent(ReinL):
             rewards, penalty_idx, tol_n, buff_n = self.ltm.div_filter(
                 sample_struc, rewards, **self.df_args
             )
-            penalty_sample = [sample_list[p] for p in penalty_idx]
             penalty_strucs = [sample_struc[p] for p in penalty_idx]
-            logging.info(f'Diversity filter: tol_n={tol_n}, buff_n={buff_n}')
+            logging.info(f"Diversity filter: tol_n={tol_n}, buff_n={buff_n}")
 
         # topk data points
         sort_idx = np.argsort(rewards)[::-1]
-        topk_idx = sort_idx[: int(self.finetune_cfg.batch_size * self.topk_ratio)]
+        topk_size = max(1, int(self.finetune_cfg.batch_size * self.topk_ratio))
+        topk_idx = sort_idx[:topk_size]
         sample_topk = [sample_list[_i] for _i in topk_idx]
         strucs_topk = [sample_struc[_i] for _i in topk_idx]
         reward_topk = rewards[topk_idx]
@@ -251,27 +263,29 @@ class MatInvent(ReinL):
             ft_data = sample_topk + data_replay
             ft_reward = np.concatenate((reward_topk, reward_replay))
             self.replay.extend(sample_topk, strucs_topk, reward_topk)
-            logging.info(f'replay buffer size={len(self.replay)}')
+            logging.info(f"replay buffer size={len(self.replay)}")
             # print(f'replay rewards={reward_replay}')
-            logging.info(f'buffer reward mean={self.replay.buffer["reward"].values.mean()}')
+            logging.info(
+                f"buffer reward mean={self.replay.buffer['reward'].values.mean()}"
+            )
             # print(f'buffer rewards={replay.buffer["reward"].values}')
         else:
             ft_data = sample_topk
             ft_reward = reward_topk
 
         # finetuning
-        logging.info('FINETUNE:')
+        logging.info("FINETUNE:")
         baseline = self.ltm.get_baseline(self.step)
         baseline = min(baseline, ft_reward.min())
         self.ft_step(ft_data, ft_reward, baseline)
 
         end_time = time.time()
         total_time = (end_time - start_time) / 60
-        logging.info(f'*****   LOOP {self.step} FINISH   *****')
-        logging.info(f'Total time taken: {total_time:.2f} min.\n\n')
+        logging.info(f"*****   LOOP {self.step} FINISH   *****")
+        logging.info(f"Total time taken: {total_time:.2f} min.\n\n")
 
     def run_rl(self):
-        logging.info('*****   RL START   *****')
+        logging.info("*****   RL START   *****")
         start_time = time.time()
 
         for step in range(self.rl_epoch):
@@ -279,12 +293,12 @@ class MatInvent(ReinL):
             self.rl_step()
             # Save the agent weights every few iterations
             if (step + 1) % self.save_freq == 0:
-                ckpt_dir = os.path.join(self.models_dir, f'loop_{step:0>4d}')
+                ckpt_dir = os.path.join(self.models_dir, f"loop_{step:0>4d}")
                 self.model_suite.save_model(self.agent, ckpt_dir)
         # If the entire training finishes, clean up
-        ckpt_dir = os.path.join(self.models_dir, 'final')
+        ckpt_dir = os.path.join(self.models_dir, "final")
         self.model_suite.save_model(self.agent, ckpt_dir)
 
-        logging.info('*****   RL END   *****')
+        logging.info("*****   RL END   *****")
         end_time = time.time()
-        logging.info('Total time taken: {} s.'.format(int(end_time - start_time)))
+        logging.info("Total time taken: {} s.".format(int(end_time - start_time)))

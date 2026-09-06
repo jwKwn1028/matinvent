@@ -1,0 +1,49 @@
+# Li-ion reward using a locally calibrated conductivity surrogate.
+# Train the JSON model with scripts/fit_ionic_surrogate.py first, then export:
+#   IONIC_SURROGATE_MODEL=/absolute/path/to/model.json
+_target_: rewards.reward.Reward
+
+root_dir: rewards/ionic_conductor_calibrated
+
+calculator:
+  _target_: rewards.calculators.IonicConductivity
+  root_dir: rewards/ionic_conductor_calibrated/descriptors
+  mobile_species:
+    - Li
+  temperature_k: 298.15
+  hop_cutoff: 4.0
+  model_path: ${oc.env:IONIC_SURROGATE_MODEL}
+  strict: false
+
+prop_cfg:
+  - name: log10_ionic_conductivity_s_cm
+    target: ascending
+    minv: -5.0
+    maxv: -2.0
+    weight: 0.60
+  - name: surrogate_applicability
+    target: ascending
+    minv: 0.50
+    maxv: 1.0
+    weight: 0.15
+  - name: mobile_sublattice_dimensionality
+    target: ascending
+    minv: 0.0
+    maxv: 3.0
+    weight: 0.25
+  - name: mobile_fraction
+    target: 0.25
+    minv: 0.0
+    maxv: 0.20
+    weight: 0.0
+
+constraint_cfg:
+  - name: surrogate_applicability
+    min: 0.20
+    penalty: 0.0
+  - name: mobile_fraction
+    min: 0.03
+    penalty: 0.0
+
+reduce: weight
+reward_threshold: 0.72

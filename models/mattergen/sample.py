@@ -17,7 +17,6 @@ from mattergen.common.utils.data_utils import lattice_matrix_to_params_torch
 from mattergen.common.utils.eval_utils import (
     get_crystals_list,
     make_structure,
-    save_structures,
 )
 from mattergen.common.utils.globals import DEFAULT_SAMPLING_CONFIG_PATH
 from mattergen.diffusion.lightning_module import DiffusionLightningModule
@@ -35,16 +34,24 @@ def draw_samples_from_sampler(
     properties_to_condition_on = properties_to_condition_on or {}
 
     # we cannot conditional sample on something on which the model was not trained to condition on
-    assert all([key in sampler.diffusion_module.model.cond_fields_model_was_trained_on for key in properties_to_condition_on.keys()])  # type: ignore
+    assert all(
+        [
+            key in sampler.diffusion_module.model.cond_fields_model_was_trained_on
+            for key in properties_to_condition_on.keys()
+        ]
+    )  # type: ignore
 
     all_samples_list = []
     all_trajs_list = []
     for conditioning_data, mask in tqdm(condition_loader, desc="Generating samples"):
-
         # generate samples
         if record_trajectories:
-            sample, mean, intermediate_samples = sampler.sample_with_record(conditioning_data, mask)
-            all_trajs_list.extend(list_of_time_steps_to_list_of_trajectories(intermediate_samples))
+            sample, mean, intermediate_samples = sampler.sample_with_record(
+                conditioning_data, mask
+            )
+            all_trajs_list.extend(
+                list_of_time_steps_to_list_of_trajectories(intermediate_samples)
+            )
         else:
             sample, mean = sampler.sample(conditioning_data, mask)
         all_samples_list.extend(mean.to_data_list())
@@ -78,7 +85,10 @@ def list_of_time_steps_to_list_of_trajectories(
 
     # <batch_size> many lists of <num_timesteps * (1 + num_corrector_steps)> many ChemGraphs.
     data_lists_per_sample = [
-        [data_lists_per_timesteps[ix_t][ix_traj] for ix_t in range(len(data_lists_per_timesteps))]
+        [
+            data_lists_per_timesteps[ix_t][ix_traj]
+            for ix_t in range(len(data_lists_per_timesteps))
+        ]
         for ix_traj in range(len(data_lists_per_timesteps[0]))
     ]
     return data_lists_per_sample
@@ -158,11 +168,18 @@ class MatterGenSampler:
             "please add it to mattergen.common.data.num_atoms_distribution.NUM_ATOMS_DISTRIBUTIONS."
         )
         if self.target_compositions_dict:
-            assert self.cfg.lightning_module.diffusion_module.loss_fn.weights.get(
-                "atomic_numbers", 0.0
-            ) == 0.0 and "atomic_numbers" not in self.cfg.lightning_module.diffusion_module.corruption.get(
-                "discrete_corruptions", {}
-            ), "Input model appears to have been trained for crystal generation (i.e., with atom type denoising), not crystal structure prediction. Please use a model trained for crystal structure prediction instead."
+            assert (
+                self.cfg.lightning_module.diffusion_module.loss_fn.weights.get(
+                    "atomic_numbers", 0.0
+                )
+                == 0.0
+                and "atomic_numbers"
+                not in self.cfg.lightning_module.diffusion_module.corruption.get(
+                    "discrete_corruptions", {}
+                )
+            ), (
+                "Input model appears to have been trained for crystal generation (i.e., with atom type denoising), not crystal structure prediction. Please use a model trained for crystal structure prediction instead."
+            )
             sampling_cfg = self._load_sampling_config(
                 sampling_config_name=self.sampling_config_name,
                 sampling_config_overrides=self.sampling_config_overrides,
@@ -202,18 +219,27 @@ class MatterGenSampler:
         self,
         sampling_config: DictConfig,
         target_compositions_dict: list[dict[str, float]] | None = None,
+        properties_to_condition_on: TargetProperty | None = None,
     ) -> ConditionLoader:
         condition_loader_partial = instantiate(sampling_config.condition_loader_partial)
         if not target_compositions_dict:
-            return condition_loader_partial(properties=self.properties_to_condition_on)
+            properties = (
+                self.properties_to_condition_on
+                if properties_to_condition_on is None
+                else properties_to_condition_on
+            )
+            return condition_loader_partial(properties=properties)
 
-        return condition_loader_partial(target_compositions_dict=target_compositions_dict)
+        return condition_loader_partial(
+            target_compositions_dict=target_compositions_dict
+        )
 
     def load_sampling_config(
         self,
         batch_size: int,
         num_batches: int,
         target_compositions_dict: list[dict[str, float]] | None = None,
+        diffusion_guidance_factor: float | None = None,
     ) -> DictConfig:
         """
         Create a sampling config from the given parameters.
@@ -224,6 +250,11 @@ class MatterGenSampler:
         else:
             # avoid modifying the original list
             sampling_config_overrides = self.sampling_config_overrides.copy()
+        guidance_factor = (
+            self.diffusion_guidance_factor
+            if diffusion_guidance_factor is None
+            else diffusion_guidance_factor
+        )
         if not target_compositions_dict:
             # Default `condition_loader_partial` is
             # mattergen.common.data.condition_factory.get_number_of_atoms_condition_loader
@@ -231,7 +262,7 @@ class MatterGenSampler:
                 f"+condition_loader_partial.num_atoms_distribution={self.num_atoms_distribution}",
                 f"+condition_loader_partial.batch_size={batch_size}",
                 f"+condition_loader_partial.num_samples={num_batches * batch_size}",
-                f"sampler_partial.guidance_scale={self.diffusion_guidance_factor}",
+                f"sampler_partial.guidance_scale={guidance_factor}",
             ]
         else:
             # `condition_loader_partial` for fixed atom type (crystal structure prediction)
@@ -273,12 +304,16 @@ class MatterGenSampler:
         batch_size: int | None = None,
         num_batches: int | None = None,
         target_compositions_dict: list[dict[str, float]] | None = None,
+        properties_to_condition_on: TargetProperty | None = None,
+        diffusion_guidance_factor: float | None = None,
         **kwargs,
-    ) -> list[Structure]:
+    ) -> Tuple[List[ChemGraph], List[Structure]]:
         # Prioritize the runtime provided batch_size, num_batches and target_compositions_dict
         batch_size = batch_size or self.batch_size
         num_batches = num_batches or self.num_batches
-        target_compositions_dict = target_compositions_dict or self.target_compositions_dict
+        target_compositions_dict = (
+            target_compositions_dict or self.target_compositions_dict
+        )
         assert batch_size is not None
         assert num_batches is not None
 
@@ -286,9 +321,19 @@ class MatterGenSampler:
             batch_size=batch_size,
             num_batches=num_batches,
             target_compositions_dict=target_compositions_dict,
+            diffusion_guidance_factor=diffusion_guidance_factor,
         )
 
-        condition_loader = self.get_condition_loader(sampling_config, target_compositions_dict)
+        properties = (
+            self.properties_to_condition_on
+            if properties_to_condition_on is None
+            else properties_to_condition_on
+        )
+        condition_loader = self.get_condition_loader(
+            sampling_config,
+            target_compositions_dict,
+            properties_to_condition_on=properties,
+        )
 
         sampler_partial = instantiate(sampling_config.sampler_partial)
         sampler = sampler_partial(pl_module=model)
@@ -296,7 +341,7 @@ class MatterGenSampler:
         gen_samples, gen_strucs = draw_samples_from_sampler(
             sampler=sampler,
             condition_loader=condition_loader,
-            properties_to_condition_on=self.properties_to_condition_on,
+            properties_to_condition_on=properties,
             record_trajectories=self.record_trajectories,
         )
 

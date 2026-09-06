@@ -1,0 +1,51 @@
+# Fast, structure-only Li-ion conductor reward for RL exploration.
+# transport_score is a ranking proxy, not a measured conductivity.
+_target_: rewards.reward.Reward
+
+root_dir: rewards/ionic_conductor
+
+# A shared calculator evaluates every descriptor in one structure pass.
+calculator:
+  _target_: rewards.calculators.IonicConductivity
+  root_dir: rewards/ionic_conductor/descriptors
+  mobile_species:
+    - Li
+  temperature_k: 298.15
+  hop_cutoff: 4.0
+  strict: false
+
+prop_cfg:
+  - name: transport_score
+    target: ascending
+    minv: 0.15
+    maxv: 0.75
+    weight: 0.55
+  - name: mobile_sublattice_dimensionality
+    target: ascending
+    minv: 0.0
+    maxv: 3.0
+    weight: 0.20
+  - name: short_contact_score
+    target: ascending
+    minv: 0.50
+    maxv: 1.0
+    weight: 0.15
+  - name: mobile_fraction
+    # Reward a Li fraction near 0.25 with a tolerance of 0.20.
+    target: 0.25
+    minv: 0.0
+    maxv: 0.20
+    weight: 0.10
+
+# Hard gates prevent reward hacking by structures with no carriers or severe
+# atomic overlap. A gated structure remains auditable but receives zero reward.
+constraint_cfg:
+  - name: mobile_fraction
+    min: 0.03
+    penalty: 0.0
+  - name: short_contact_score
+    min: 0.25
+    penalty: 0.0
+
+reduce: weight
+reward_threshold: 0.72

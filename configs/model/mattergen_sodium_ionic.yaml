@@ -1,0 +1,17 @@
+_target_: models.suite.MatterGenSuite
+
+model_name: mattergen_chemical_system_energy_above_hull
+device: ${device}
+
+sample_cfg:
+  batch_size: ${calc:'${eval_size} * 4'}
+  num_batches: 1
+  properties_to_condition_on:
+    chemical_system: Na-P-S
+    energy_above_hull: 0.05
+  diffusion_guidance_factor: 2.0
+
+finetune_cfg:
+  batch_size: ${eval_size}
+  timesteps: 1000
+  lr: 1.0e-05
