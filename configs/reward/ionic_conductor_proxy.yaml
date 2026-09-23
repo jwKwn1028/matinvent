@@ -1,15 +1,13 @@
-# Fast, structure-only Na-ion conductor reward for RL exploration.
+# Fast structure-only Ca2+ reward; explicitly opt in with this preset.
 _target_: rewards.reward.Reward
-
-root_dir: rewards/sodium_ionic_conductor
+root_dir: rewards/ionic_conductor_proxy
 
 calculator:
   _target_: rewards.calculators.IonicConductivity
-  root_dir: rewards/sodium_ionic_conductor/descriptors
-  mobile_species:
-    - Na
-  charge_number: 1.0
-  carrier_fraction_target: 0.32  # retain this optional Na preset's original proxy
+  root_dir: rewards/ionic_conductor_proxy/descriptors
+  mobile_species: [Ca]
+  charge_number: 2.0
+  carrier_fraction_target: 0.23076923076923078
   temperature_k: 298.15
   hop_cutoff: 4.5
   strict: false
@@ -31,7 +29,7 @@ prop_cfg:
     maxv: 1.0
     weight: 0.15
   - name: mobile_fraction
-    target: 0.22
+    target: 0.23076923076923078  # Ca3(PS4)2 composition prior
     minv: 0.0
     maxv: 0.20
     weight: 0.10

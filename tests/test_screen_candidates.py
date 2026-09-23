@@ -20,13 +20,42 @@ def write_cif(structure: Structure, path: Path) -> None:
 
 
 class ScreenCandidatesTests(unittest.TestCase):
+    def test_default_ca_fit_rejects_structures_without_calcium(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir)
+            write_cif(
+                Structure(Lattice.cubic(4), ["Li", "O"], [[0, 0, 0], [0.5, 0.5, 0.5]]),
+                directory / "li.cif",
+            )
+            dataset = directory / "training.csv"
+            with dataset.open("w", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["structure_path", "log10_ionic_conductivity_s_cm"])
+                writer.writerows([["li.cif", value] for value in (-3, -4, -5)])
+            output = directory / "model.json"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPOSITORY_ROOT / "scripts/fit_ionic_surrogate.py"),
+                    str(dataset),
+                    "--output",
+                    str(output),
+                ],
+                cwd=REPOSITORY_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("none of the selected mobile ion", completed.stderr)
+            self.assertFalse(output.exists())
+
     def test_cli_ranks_and_writes_candidate_csv(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             directory = Path(tmpdir)
             write_cif(
                 Structure(
                     Lattice.cubic(3.0),
-                    ["Li", "O"],
+                    ["Ca", "O"],
                     [[0, 0, 0], [0.5, 0.5, 0.5]],
                 ),
                 directory / "connected.cif",
@@ -34,7 +63,7 @@ class ScreenCandidatesTests(unittest.TestCase):
             write_cif(
                 Structure(
                     Lattice.cubic(6.0),
-                    ["Li", "O"],
+                    ["Ca", "O"],
                     [[0, 0, 0], [0.5, 0.5, 0.5]],
                 ),
                 directory / "disconnected.cif",
@@ -79,7 +108,7 @@ class ScreenCandidatesTests(unittest.TestCase):
                     write_cif(
                         Structure(
                             Lattice.cubic(lattice_constant),
-                            ["Li", "O"],
+                            ["Ca", "O"],
                             [[0, 0, 0], [0.5, 0.5, 0.5]],
                         ),
                         path,
@@ -124,9 +153,13 @@ class ScreenCandidatesTests(unittest.TestCase):
             self.assertTrue(model.exists())
             payload = json.loads(model.read_text(encoding="utf-8"))
             self.assertEqual(len(payload["metadata"]["source_dataset_sha256"]), 64)
+            self.assertEqual(payload["metadata"]["mobile_species"], ["Ca"])
+            self.assertEqual(payload["metadata"]["charge_number"], 2.0)
 
         self.assertIn("log10_ionic_conductivity_s_cm", row)
         self.assertIn("surrogate_applicability", row)
+        self.assertEqual(row["mobile_species"], "Ca")
+        self.assertEqual(float(row["charge_number"]), 2.0)
 
 
 if __name__ == "__main__":

@@ -21,8 +21,11 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from rewards.calculators.ionic.descriptors import (  # noqa: E402
     SURROGATE_FEATURE_NAMES,
+    DEFAULT_CARRIER_FRACTION_TARGET,
+    DEFAULT_HOP_CUTOFF,
     featurize_structure,
     normalize_mobile_species,
+    resolve_charge_number,
 )
 from rewards.calculators.ionic.io import load_structure_file  # noqa: E402
 from rewards.calculators.ionic.surrogate import (  # noqa: E402
@@ -49,9 +52,15 @@ def parse_args() -> argparse.Namespace:
         default="log10",
         help="Convert linear S/cm values to log10 before fitting",
     )
-    parser.add_argument("--mobile-species", default="Li")
+    parser.add_argument("--mobile-species", default="Ca")
+    parser.add_argument(
+        "--charge-number", type=float, help="Positive ionic valence (Ca: 2)"
+    )
+    parser.add_argument(
+        "--carrier-fraction-target", type=float, default=DEFAULT_CARRIER_FRACTION_TARGET
+    )
     parser.add_argument("--temperature-k", type=float, default=298.15)
-    parser.add_argument("--hop-cutoff", type=float, default=4.0)
+    parser.add_argument("--hop-cutoff", type=float, default=DEFAULT_HOP_CUTOFF)
     parser.add_argument("--ridge-alpha", type=float, default=1.0)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=7)
@@ -74,6 +83,7 @@ def main() -> int:
     args = parse_args()
     dataset = Path(args.dataset).expanduser().resolve()
     mobile_species = normalize_mobile_species(args.mobile_species)
+    charge_number = resolve_charge_number(mobile_species, args.charge_number)
 
     with dataset.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
@@ -105,7 +115,13 @@ def main() -> int:
                 mobile_species=mobile_species,
                 temperature_k=args.temperature_k,
                 hop_cutoff=args.hop_cutoff,
+                charge_number=charge_number,
+                carrier_fraction_target=args.carrier_fraction_target,
             ).as_dict()
+            if record["mobile_fraction"] <= 0:
+                raise ValueError(
+                    "training structure contains none of the selected mobile ion"
+                )
             target = float(row[args.target_column])
             if args.target_scale == "linear":
                 if target <= 0:
@@ -155,6 +171,8 @@ def main() -> int:
             "source_target_column": args.target_column,
             "source_target_scale": args.target_scale,
             "mobile_species": list(mobile_species),
+            "charge_number": charge_number,
+            "carrier_fraction_target": args.carrier_fraction_target,
             "temperature_k": args.temperature_k,
             "hop_cutoff": args.hop_cutoff,
             "ridge_alpha": args.ridge_alpha,

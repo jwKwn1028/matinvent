@@ -77,16 +77,35 @@ class IonicSurrogateTests(unittest.TestCase):
             self.records,
             self.targets,
             feature_names=self.features,
-            metadata={"mobile_species": ["Na"]},
+            metadata={"mobile_species": ["Li"]},
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             path = model.save(Path(tmpdir) / "model.json")
             with self.assertRaisesRegex(ValueError, "trained for"):
                 IonicConductivity(
                     root_dir=tmpdir,
-                    mobile_species="Li",
+                    mobile_species="Ca",
                     model_path=str(path),
                 )
+
+    def test_calcium_surrogate_rejects_monovalent_or_missing_metadata(self) -> None:
+        for metadata, message in [
+            ({}, "metadata missing"),
+            ({"mobile_species": ["Ca"], "charge_number": 1.0}, "charge_number"),
+        ]:
+            with (
+                self.subTest(metadata=metadata),
+                tempfile.TemporaryDirectory() as tmpdir,
+            ):
+                model = fit_linear_surrogate(
+                    self.records,
+                    self.targets,
+                    feature_names=self.features,
+                    metadata=metadata,
+                )
+                path = model.save(Path(tmpdir) / "model.json")
+                with self.assertRaisesRegex(ValueError, message):
+                    IonicConductivity(root_dir=tmpdir, model_path=str(path))
 
 
 if __name__ == "__main__":

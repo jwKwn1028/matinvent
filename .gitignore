@@ -112,3 +112,16 @@ Local
 
 # VS Code
 .vscode/
+
+# Reward calculator run artifacts (Calculator.root_dir is created under rewards/)
+rewards/*/
+!rewards/calculators/
+
+# LAMMPS/NequIP MD outputs, in case IONIC_MD_WORK_DIR points elsewhere in-tree
+*.lammpstrj
+log.lammps
+*.restart
+
+# Compiled NequIP potentials (NEQUIP_MODEL_PATH)
+*.nequip.pth
+*.pt2

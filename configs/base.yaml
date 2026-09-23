@@ -1,5 +1,5 @@
 # global setting
-expname: li_ionic_conductor
+expname: ca_ionic_conductor
 results_dir: exp_res
 device: cuda
 

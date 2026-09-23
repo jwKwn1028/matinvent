@@ -16,7 +16,11 @@ from pymatgen.core import Element, Structure
 
 
 BOLTZMANN_EV_PER_K = 8.617333262e-5
-DEFAULT_MOBILE_SPECIES = ("Li",)
+DEFAULT_MOBILE_SPECIES = ("Ca",)
+DEFAULT_HOP_CUTOFF = 4.5
+# Ca3(PS4)2 is charge balanced for Ca2+/P5+/S2-. This is a configurable
+# composition prior for exploratory Ca-P-S screening, not a transport optimum.
+DEFAULT_CARRIER_FRACTION_TARGET = 3.0 / 13.0
 
 # A deliberately coarse, monotonic proxy for anion polarizability.  Values are
 # normalized to [0, 1] and are used only as one weak contribution to the ranking
@@ -90,6 +94,37 @@ def normalize_mobile_species(species: str | Iterable[str]) -> tuple[str, ...]:
     if not normalized:
         raise ValueError("At least one mobile-ion species is required")
     return tuple(normalized)
+
+
+def resolve_charge_number(
+    mobile_species: str | Iterable[str],
+    charge_number: float | None = None,
+) -> float:
+    """Use Ca2+ by default; retain explicit monovalent-ion compatibility.
+
+    Charge is used in conductivity bookkeeping, never to rescale diffusion or
+    replace a potential trained for the selected chemical species.
+    """
+    symbols = normalize_mobile_species(mobile_species)
+    known = {"Ca": 2.0, "Li": 1.0, "Na": 1.0}
+    charges = {known[symbol] for symbol in symbols if symbol in known}
+    if charge_number is None:
+        if len(charges) != 1 or any(symbol not in known for symbol in symbols):
+            raise ValueError(
+                "Specify a single charge_number for the selected mobile species"
+            )
+        charge_number = charges.pop()
+    charge_number = float(charge_number)
+    if not np.isfinite(charge_number) or charge_number <= 0:
+        raise ValueError("charge_number must be finite and positive")
+    if any(
+        symbol in known and not np.isclose(charge_number, known[symbol])
+        for symbol in symbols
+    ):
+        raise ValueError(
+            f"charge_number={charge_number} conflicts with the ionic charge of {symbols}"
+        )
+    return charge_number
 
 
 def _symbol(specie: object) -> str:
@@ -283,7 +318,9 @@ def featurize_structure(
     structure: Structure,
     mobile_species: str | Iterable[str] = DEFAULT_MOBILE_SPECIES,
     temperature_k: float = 298.15,
-    hop_cutoff: float = 4.0,
+    hop_cutoff: float = DEFAULT_HOP_CUTOFF,
+    charge_number: float | None = None,
+    carrier_fraction_target: float = DEFAULT_CARRIER_FRACTION_TARGET,
 ) -> IonicDescriptors:
     """Compute fast, interpretable descriptors for a periodic structure.
 
@@ -293,11 +330,14 @@ def featurize_structure(
     """
 
     mobile_symbols = normalize_mobile_species(mobile_species)
+    charge_number = resolve_charge_number(mobile_symbols, charge_number)
     mobile_set = set(mobile_symbols)
     if temperature_k <= 0:
         raise ValueError("temperature_k must be positive")
     if hop_cutoff <= 0:
         raise ValueError("hop_cutoff must be positive")
+    if not np.isfinite(carrier_fraction_target) or not 0 < carrier_fraction_target < 1:
+        raise ValueError("carrier_fraction_target must be between 0 and 1")
     if (
         len(structure) == 0
         or not np.isfinite(structure.volume)
@@ -330,7 +370,9 @@ def featurize_structure(
     else:
         clearance_score = 0.0
     free_volume_score = exp(-0.5 * ((free_volume_fraction - 0.45) / 0.22) ** 2)
-    carrier_fraction_score = exp(-0.5 * ((mobile_fraction - 0.32) / 0.16) ** 2)
+    carrier_fraction_score = exp(
+        -0.5 * ((mobile_fraction - carrier_fraction_target) / 0.16) ** 2
+    )
     density_score = float(np.clip(mobile_number_density / 0.04, 0.0, 1.0))
     carrier_score = (carrier_fraction_score * density_score) ** 0.5
     bottleneck_score = (clearance_score * connectivity) ** 0.5
@@ -358,8 +400,12 @@ def featurize_structure(
     # Arrhenius-inspired mapping used only to make relative score differences
     # easier to interpret.  The prefactor and barrier mapping are not fitted.
     activation_energy_proxy = 0.85 - 0.65 * transport_score
-    log10_conductivity_proxy = 2.0 - activation_energy_proxy / (
-        BOLTZMANN_EV_PER_K * temperature_k * np.log(10.0)
+    # Include z^2 in this explicitly UNCALIBRATED conductivity-shaped proxy.
+    # Neither its prefactor nor its activation-energy mapping predicts Ca transport.
+    log10_conductivity_proxy = (
+        2.0
+        + 2.0 * np.log10(charge_number)
+        - activation_energy_proxy / (BOLTZMANN_EV_PER_K * temperature_k * np.log(10.0))
     )
 
     return IonicDescriptors(

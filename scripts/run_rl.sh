@@ -3,11 +3,11 @@
 mkdir -p exp_res
 # export HYDRA_FULL_ERROR=1  # for debug
 
-EXPNAME="${EXPNAME:-li_ionic_conductor}"
+EXPNAME="${EXPNAME:-ca_ionic_conductor}"
 MODEL="${MODEL:-mattergen_ionic}"
 REWARD="${REWARD:-ionic_conductor}"
 DEVICE="${DEVICE:-cuda:0}"
-CHEMICAL_SYSTEM="${CHEMICAL_SYSTEM:-Li-P-S}"
+CHEMICAL_SYSTEM="${CHEMICAL_SYSTEM:-Ca-P-S}"
 
 nohup python -u main.py \
     "expname=${EXPNAME}" \

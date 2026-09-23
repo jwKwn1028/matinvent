@@ -13,9 +13,12 @@ from pymatgen.core import Structure
 from rewards.calculators.base import Calculator
 from rewards.calculators.ionic.descriptors import (
     DESCRIPTOR_NAMES,
+    DEFAULT_CARRIER_FRACTION_TARGET,
+    DEFAULT_HOP_CUTOFF,
     DEFAULT_MOBILE_SPECIES,
     featurize_structure,
     normalize_mobile_species,
+    resolve_charge_number,
 )
 from rewards.calculators.ionic.surrogate import LinearSurrogate
 
@@ -40,13 +43,22 @@ class IonicConductivity(Calculator):
         task: str = "transport_score",
         mobile_species: str | Iterable[str] = DEFAULT_MOBILE_SPECIES,
         temperature_k: float = 298.15,
-        hop_cutoff: float = 4.0,
+        hop_cutoff: float = DEFAULT_HOP_CUTOFF,
+        charge_number: float | None = None,
+        carrier_fraction_target: float = DEFAULT_CARRIER_FRACTION_TARGET,
         model_path: str | None = None,
         allow_model_mismatch: bool = False,
         strict: bool = False,
     ) -> None:
         super().__init__(root_dir, task)
         self.mobile_species = normalize_mobile_species(mobile_species)
+        self.charge_number = resolve_charge_number(self.mobile_species, charge_number)
+        self.carrier_fraction_target = float(carrier_fraction_target)
+        if (
+            not np.isfinite(self.carrier_fraction_target)
+            or not 0 < self.carrier_fraction_target < 1
+        ):
+            raise ValueError("carrier_fraction_target must be between 0 and 1")
         self.temperature_k = float(temperature_k)
         self.hop_cutoff = float(hop_cutoff)
         self.strict = strict
@@ -84,11 +96,14 @@ class IonicConductivity(Calculator):
                 record: dict[str, object] = {
                     "formula": structure.composition.reduced_formula,
                     "mobile_species": ",".join(self.mobile_species),
+                    "charge_number": self.charge_number,
                     **featurize_structure(
                         structure,
                         mobile_species=self.mobile_species,
                         temperature_k=self.temperature_k,
                         hop_cutoff=self.hop_cutoff,
+                        charge_number=self.charge_number,
+                        carrier_fraction_target=self.carrier_fraction_target,
                     ).as_dict(),
                     "error": "",
                 }
@@ -102,6 +117,7 @@ class IonicConductivity(Calculator):
                         "unknown",
                     ),
                     "mobile_species": ",".join(self.mobile_species),
+                    "charge_number": self.charge_number,
                     **{name: np.nan for name in DESCRIPTOR_NAMES},
                     "error": f"{type(exc).__name__}: {exc}",
                 }
@@ -189,8 +205,10 @@ class IonicConductivity(Calculator):
                 )
 
         for key, actual in (
+            ("charge_number", self.charge_number),
             ("temperature_k", self.temperature_k),
             ("hop_cutoff", self.hop_cutoff),
+            ("carrier_fraction_target", self.carrier_fraction_target),
         ):
             expected_value = metadata.get(key)
             if expected_value is not None and not np.isclose(
@@ -200,3 +218,16 @@ class IonicConductivity(Calculator):
                     f"Surrogate was trained with {key}={expected_value}, but "
                     f"calculator uses {actual}. Set matching descriptor settings."
                 )
+        required = {
+            "mobile_species",
+            "charge_number",
+            "temperature_k",
+            "hop_cutoff",
+            "carrier_fraction_target",
+        }
+        missing = {key for key in required if metadata.get(key) is None}
+        if missing:
+            raise ValueError(
+                f"Surrogate metadata missing {sorted(missing)}. Refit with the "
+                "current fitting CLI using conductivity data for the selected ion."
+            )

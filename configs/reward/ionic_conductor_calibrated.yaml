@@ -1,4 +1,5 @@
-# Li-ion reward using a locally calibrated conductivity surrogate.
+# Ca2+-ion reward using a locally calibrated Ca conductivity surrogate.
+# Training data and model metadata must describe Ca2+, not a monovalent ion.
 # Train the JSON model with scripts/fit_ionic_surrogate.py first, then export:
 #   IONIC_SURROGATE_MODEL=/absolute/path/to/model.json
 _target_: rewards.reward.Reward
@@ -9,9 +10,11 @@ calculator:
   _target_: rewards.calculators.IonicConductivity
   root_dir: rewards/ionic_conductor_calibrated/descriptors
   mobile_species:
-    - Li
+    - Ca
+  charge_number: 2.0
+  carrier_fraction_target: 0.23076923076923078
   temperature_k: 298.15
-  hop_cutoff: 4.0
+  hop_cutoff: 4.5
   model_path: ${oc.env:IONIC_SURROGATE_MODEL}
   strict: false
 
@@ -32,7 +35,7 @@ prop_cfg:
     maxv: 3.0
     weight: 0.25
   - name: mobile_fraction
-    target: 0.25
+    target: 0.23076923076923078
     minv: 0.0
     maxv: 0.20
     weight: 0.0

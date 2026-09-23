@@ -15,6 +15,10 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from rewards.calculators.ionic import IonicConductivity  # noqa: E402
+from rewards.calculators.ionic.descriptors import (  # noqa: E402
+    DEFAULT_CARRIER_FRACTION_TARGET,
+    DEFAULT_HOP_CUTOFF,
+)
 from rewards.calculators.ionic.io import (  # noqa: E402
     discover_structure_paths,
     load_structure_file,
@@ -31,11 +35,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("inputs", nargs="+", help="Structure files or directories")
     parser.add_argument(
         "--mobile-species",
-        default="Li",
-        help="Comma-separated mobile ions (default: Li)",
+        default="Ca",
+        help="Comma-separated mobile ions (default: Ca, interpreted as Ca2+)",
     )
     parser.add_argument("--temperature-k", type=float, default=298.15)
-    parser.add_argument("--hop-cutoff", type=float, default=4.0)
+    parser.add_argument("--hop-cutoff", type=float, default=DEFAULT_HOP_CUTOFF)
+    parser.add_argument(
+        "--charge-number", type=float, help="Positive ionic valence (Ca: 2)"
+    )
+    parser.add_argument(
+        "--carrier-fraction-target", type=float, default=DEFAULT_CARRIER_FRACTION_TARGET
+    )
     parser.add_argument(
         "--model",
         help="Optional calibrated surrogate JSON from fit_ionic_surrogate.py",
@@ -61,6 +71,8 @@ def main() -> int:
         mobile_species=args.mobile_species,
         temperature_k=args.temperature_k,
         hop_cutoff=args.hop_cutoff,
+        charge_number=args.charge_number,
+        carrier_fraction_target=args.carrier_fraction_target,
         model_path=args.model,
     )
     structures = []
@@ -76,6 +88,7 @@ def main() -> int:
                 {
                     "formula": "unknown",
                     "mobile_species": ",".join(calculator.mobile_species),
+                    "charge_number": calculator.charge_number,
                     **{task: math.nan for task in calculator.available_tasks},
                     "error": f"{type(exc).__name__}: {exc}",
                     "source": str(path),

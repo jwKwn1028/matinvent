@@ -18,6 +18,7 @@ _CALCULATORS = {
         "rewards.calculators.ionic.calc",
         "IonicConductivity",
     ),
+    "NequIPMD": ("rewards.calculators.nequip_md.calc", "NequIPMD"),
     "PyMatGen": ("rewards.calculators.pymatgen.calc", "PyMatGen"),
     "SynScore": ("rewards.calculators.syn_score.calc", "SynScore"),
 }

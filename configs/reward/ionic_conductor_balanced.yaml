@@ -1,6 +1,7 @@
-# Higher-selectivity Li electrolyte reward. This combines the fast ionic
+# Higher-selectivity Ca2+ electrolyte reward. This combines the fast ionic
 # descriptor pass with the pretrained MatInvent band-gap, formation-energy, and
-# synthesizability estimators. It is slower than reward=ionic_conductor.
+# synthesizability estimators. Its transport term is the structural proxy;
+# reward=ionic_conductor uses LAMMPS/NequIP MD instead.
 _target_: rewards.reward.Reward
 
 root_dir: rewards/ionic_conductor_balanced
@@ -9,9 +10,11 @@ calculator:
   _target_: rewards.calculators.IonicConductivity
   root_dir: rewards/ionic_conductor_balanced/descriptors
   mobile_species:
-    - Li
+    - Ca
+  charge_number: 2.0
+  carrier_fraction_target: 0.23076923076923078
   temperature_k: 298.15
-  hop_cutoff: 4.0
+  hop_cutoff: 4.5
   strict: false
 
 prop_cfg:
@@ -31,7 +34,7 @@ prop_cfg:
     maxv: 1.0
     weight: 0.05
   - name: mobile_fraction
-    target: 0.25
+    target: 0.23076923076923078  # Ca3(PS4)2 composition prior
     minv: 0.0
     maxv: 0.20
     weight: 0.05

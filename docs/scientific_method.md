@@ -2,6 +2,17 @@
 
 ## Scope
 
+The default Ca2+ reward now uses LAMMPS–NequIP MD tracer diffusivity for its
+transport term. See [the MD protocol and setup](nequip_md.md). It requires a
+validated compiled potential and an explicit simulation temperature. The
+descriptor-only reward remains available as `ionic_conductor_proxy`; the
+descriptor discussion below also applies to the structural terms and screening
+CLI. MD diffusivity is reported at the simulation temperature. Its optional
+Nernst–Einstein conductivity estimate assumes uncorrelated ions and does not
+establish room-temperature charge conductivity. The default search is exploratory
+Ca–P–S. The NE conversion uses charge +2e; the diffusivity itself is not rescaled
+by valence. A Ca-containing trained potential is required.
+
 MatInvent-Ion's fast descriptors answer a narrow question: *which members of a
 large generated batch have structural motifs worth evaluating next?* They do not
 establish room-temperature conductivity, thermodynamic stability, electronic
@@ -9,7 +20,7 @@ insulation, electrochemical stability, or interface compatibility.
 
 ## Built-in descriptor
 
-For a selected mobile-ion set (Li by default), the calculator measures:
+For a selected mobile-ion set (Ca by default, charge +2), the calculator measures:
 
 - `mobile_fraction`: mobile-ion stoichiometric fraction;
 - `mobile_number_density`: mobile ions per cubic angstrom;
@@ -33,10 +44,15 @@ core = 0.35 connectivity + 0.30 carrier + 0.20 free-volume + 0.15 softness
 transport_score = contact * (0.55 core + 0.45 bottleneck) * carrier-fraction window
 ```
 
-The carrier and free-volume terms use broad smooth windows. The convenience
+The carrier and free-volume terms use broad smooth windows. The carrier-fraction
+window is centered at a configurable 3/13 for the Ca–P–S presets, the Ca fraction
+of charge-balanced Ca3(PS4)2. This is a stoichiometric prior, not a validated
+conductivity optimum. The initial Ca-site hop cutoff is 4.5 Å and must be checked
+for sensitivity. The convenience
 `activation_energy_proxy_ev = 0.85 - 0.65 * transport_score`, and the
 `log10_conductivity_proxy` applies an Arrhenius-shaped mapping with an unfitted
-prefactor. Their purpose is relative interpretation only.
+prefactor and a z² charge factor. Neither mapping is fitted to Ca data. Their
+purpose is relative interpretation only; the MD reward does not use them.
 
 ### Known blind spots
 
@@ -63,6 +79,10 @@ range for every feature. At inference:
 - `surrogate_uncertainty` inflates cross-validated RMSE outside that range.
 
 The default shuffled K-fold RMSE is a diagnostic, not a publication-grade estimate.
+Surrogates must record their mobile species and ionic charge; Ca2+ inference
+rejects monovalent-ion or missing-context models by default. The fitting CLI
+rejects structures with none of the selected mobile ion. Use Ca2+ transport
+labels rather than reusing a Li conductivity dataset.
 For scientific evaluation, split by composition system or structure prototype,
 reserve a never-touched test set, report data provenance, and quantify repeated
 measurements or calculation fidelity. Avoid mixing bulk and total conductivity or
@@ -99,6 +119,93 @@ temperatures without an explicit normalization model.
 
 Do not promote a candidate solely because it ranks above known materials on the
 fast proxy. Promotion requires agreement across independent evidence levels.
+
+## Planned experimentation
+
+Nothing in this repository has yet been validated for Ca²⁺. The items below are
+ordered by dependency: results from a later group are uninterpretable until the
+earlier ones pass. Record each as a dated entry with its commit, configuration
+and raw outputs.
+
+### 1. Potential validation (blocks everything downstream)
+
+- Obtain or train a Ca–P–S NequIP potential and report energy/force parity
+  against DFT on a held-out set that spans the generated composition range,
+  defected and off-stoichiometric cells, and the MD temperature — not only
+  relaxed ground states. Report per-element force RMSE.
+- Check extrapolation on RL-generated structures, which are not drawn from the
+  training distribution. Track a distance-to-training-manifold or ensemble
+  disagreement measure per candidate and report the fraction flagged.
+- Benchmark the full MD protocol on reference Ca conductors and on a known poor
+  conductor at the same temperature. Confirm that the reward window in
+  `configs/reward/ionic_conductor.yaml` (`minv: -8.0`, `maxv: -4.0`) actually
+  brackets them; it is currently an assumed screening scale.
+
+### 2. MD protocol convergence
+
+- Extend production from 100 ps to 500 ps and 1 ns on a fixed finalist set and
+  report how `log10_tracer_diffusivity_cm2_s` and replica scatter move. Ca²⁺ is
+  expected to be slow; the current window may not resolve it, and unresolved
+  candidates become NaN rather than low scores.
+- Raise replicas from 3 seeds to 5–8 and report the standard error of the mean,
+  not only the sample standard deviation currently recorded.
+- Sweep `min_cell_length_a` at 20, 25 and 30 Å to measure finite-size dependence
+  of D at fixed temperature.
+- Sweep thermostat damping around the 0.1 ps default, and compare NVT production
+  against NVE continued from the equilibrated state.
+- Halve the timestep to 0.5 fs and confirm D is unchanged.
+- The cell is inherited from upstream relaxation with no thermal expansion. For
+  finalists, run NPT at the MD temperature, then re-measure D in the expanded
+  cell and report the difference. This is a known, unquantified bias.
+
+### 3. Temperature dependence
+
+- The reward uses a single temperature, so no room-temperature statement is
+  currently supported. Run four to five temperatures per finalist, fit Arrhenius
+  with uncertainty, and report the activation energy.
+- Test the Arrhenius assumption rather than assuming it: check for curvature,
+  and confirm a common mechanism across temperature via diffusion
+  dimensionality, hop statistics and radial distribution functions.
+- Measure the Haven ratio by comparing tracer D to a charge diffusivity from the
+  collective current, to quantify how far `conductivity_ne_s_cm` is from a real
+  charge conductivity. Collective-current analysis is not implemented yet.
+
+### 4. Descriptor and prior validation
+
+- Now that both paths exist, evaluate the geometric proxy against MD on a common
+  candidate set: report Spearman rank correlation between `transport_score` and
+  MD `log10_tracer_diffusivity_cm2_s`, plus recall of the MD top decile at
+  several proxy cutoffs. That determines whether `ionic_conductor_proxy` is
+  usable as a prefilter and at what cost in missed candidates.
+- Sweep `hop_cutoff` from 3.5 to 6.0 Å and report both the change in
+  `mobile_sublattice_dimensionality`/`connectivity` and the correlation with MD
+  D at each value. The 4.5 Å default is a geometric guess.
+- Ablate the composition prior by setting the `mobile_fraction` term weight to
+  zero, and compare the discovered composition distribution against the run that
+  centers on 3/13. The prior may exclude better Ca ratios.
+- Replace the hand-set `anion_softness` ordering with a computed quantity and
+  compare rankings.
+
+### 5. Reward and RL behavior
+
+- Audit for reward hacking. Fast motion can indicate melting, amorphization or
+  potential extrapolation rather than solid-state conduction; check phase
+  retention for every finalist via post-run symmetry, framework MSD and RDF.
+- Track the NaN rate per RL iteration. Because unresolved candidates score zero,
+  the policy can be pushed toward whatever the protocol happens to resolve
+  rather than toward better conductors.
+- Run a matched-budget ablation of the MD reward against the proxy reward, then
+  judge both candidate sets with independent evidence (NEB migration barriers or
+  longer MD) that neither reward optimized.
+- Track composition and structure-prototype diversity across iterations to
+  confirm the 55%-weighted transport term is not collapsing the search.
+
+### 6. Calibrated surrogate
+
+- No Ca²⁺ conductivity dataset has been assembled. Build one with recorded
+  provenance, measurement type and temperature, then evaluate with
+  composition-system splits and a reserved test set before enabling
+  `ionic_conductor_calibrated`.
 
 ## Reproducibility checklist
 

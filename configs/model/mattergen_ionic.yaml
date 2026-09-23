@@ -1,7 +1,7 @@
 _target_: models.suite.MatterGenSuite
 
 # Joint conditioning dramatically increases the fraction of useful proposals.
-# Override chemical_system to explore another Li-containing chemistry.
+# Exploratory Ca2+ conductor search; override to explore another Ca chemistry.
 model_name: mattergen_chemical_system_energy_above_hull
 device: ${device}
 
@@ -9,7 +9,7 @@ sample_cfg:
   batch_size: ${calc:'${eval_size} * 4'}
   num_batches: 1
   properties_to_condition_on:
-    chemical_system: Li-P-S
+    chemical_system: Ca-P-S
     energy_above_hull: 0.05
   diffusion_guidance_factor: 2.0
 

@@ -1,24 +1,52 @@
-# Fast, structure-only Li-ion conductor reward for RL exploration.
-# transport_score is a ranking proxy, not a measured conductivity.
+# Ca2+-ion conductor reward with LAMMPS/NequIP MD transport evaluation.
+# Requires a compiled potential and an explicitly selected MD temperature.
+# The previous descriptor-only reward remains available as ionic_conductor_proxy.
 _target_: rewards.reward.Reward
 
 root_dir: rewards/ionic_conductor
 
-# A shared calculator evaluates every descriptor in one structure pass.
+# Cheap structural objectives share one descriptor calculation.
 calculator:
   _target_: rewards.calculators.IonicConductivity
   root_dir: rewards/ionic_conductor/descriptors
   mobile_species:
-    - Li
+    - Ca
+  charge_number: 2.0
+  carrier_fraction_target: 0.23076923076923078  # 3/13 in Ca3(PS4)2; a prior only
   temperature_k: 298.15
-  hop_cutoff: 4.0
+  hop_cutoff: 4.5  # configurable geometric screening cutoff, not a migration barrier
   strict: false
 
 prop_cfg:
-  - name: transport_score
+  - name: log10_tracer_diffusivity_cm2_s
+    calculator:
+      _target_: rewards.calculators.NequIPMD
+      root_dir: ${oc.env:IONIC_MD_WORK_DIR,rewards/ionic_conductor/nequip_md}
+      model_path: ${oc.env:NEQUIP_MODEL_PATH}
+      lammps_command: ${oc.env:LAMMPS_COMMAND,lmp}
+      cuda_visible_devices: ${oc.env:NEQUIP_MD_CUDA_VISIBLE_DEVICES,null}
+      # These must match the compiled model's training-time type names.
+      type_names:
+        Ca: Ca
+        P: P
+        S: S
+      mobile_species: Ca
+      charge_number: 2.0
+      temperature_k: ${oc.env:IONIC_MD_TEMPERATURE_K}
+      timestep_ps: 0.001
+      equilibration_steps: 20000
+      production_steps: 100000
+      sample_interval: 100
+      min_cell_length_a: 20.0
+      max_atoms: 4096
+      seeds: [17, 29, 43]
+      timeout_seconds: 7200
+      strict: false
     target: ascending
-    minv: 0.15
-    maxv: 0.75
+    # Initial screening scale: D = 1e-8 to 1e-4 cm^2/s at the MD temperature.
+    # Calibrate this range and the MD protocol against reference materials.
+    minv: -8.0
+    maxv: -4.0
     weight: 0.55
   - name: mobile_sublattice_dimensionality
     target: ascending
@@ -31,8 +59,9 @@ prop_cfg:
     maxv: 1.0
     weight: 0.15
   - name: mobile_fraction
-    # Reward a Li fraction near 0.25 with a tolerance of 0.20.
-    target: 0.25
+    # Ca3(PS4)2 is a charge-balanced composition prior, not a fixed formula
+    # or a validated optimum for Ca diffusion. Explore other ratios too.
+    target: 0.23076923076923078
     minv: 0.0
     maxv: 0.20
     weight: 0.10
